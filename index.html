@@ -137,6 +137,7 @@
     cursor: pointer; line-height: 1; display: flex; align-items: center; justify-content: center;
   }
   #enableNotifBtn { width: 100%; }
+  #testNotifBtn { width: 100%; margin-top: 10px; }
   /* ---------- footer / toast / celebrate ---------- */
   footer { text-align: center; font-size: 12px; color: var(--muted); line-height: 1.6; }
   .toast {
@@ -204,6 +205,7 @@
         <button id="addTimeBtn">添加提醒</button>
       </div>
       <button id="enableNotifBtn" class="primary-btn" hidden>开启通知权限</button>
+      <button id="testNotifBtn" class="ghost-btn" hidden>发送测试通知</button>
     </section>
 
     <section class="card">
@@ -354,6 +356,7 @@
     var supported = 'Notification' in window;
     var btn = $('enableNotifBtn');
     btn.hidden = !supported || Notification.permission === 'granted';
+    $('testNotifBtn').hidden = !supported || Notification.permission !== 'granted';
     var hint = $('notifHint');
     if (!supported) {
       hint.textContent = '当前浏览器不支持通知。建议用手机 Chrome / Safari 打开并安装到主屏幕。';
@@ -423,6 +426,28 @@
     toastTimer = setTimeout(function () { el.hidden = true; }, 2000);
   }
 
+  /* 安卓 Chrome/Edge 禁止 new Notification()，必须经 Service Worker 弹出 */
+  function showNotify (title, opts) {
+    var fallback = function () {
+      return new Promise(function (resolve, reject) {
+        try {
+          new Notification(title, opts);
+          resolve();
+        } catch (e) { reject(e); }
+      });
+    };
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      return navigator.serviceWorker.controller.showNotification(title, opts).catch(fallback);
+    }
+    if (navigator.serviceWorker) {
+      return navigator.serviceWorker.getRegistration().then(function (reg) {
+        if (reg) return reg.showNotification(title, opts);
+        return fallback();
+      });
+    }
+    return fallback();
+  }
+
   /* ---------- reminder engine ---------- */
   function checkReminders () {
     var today = todayStr();
@@ -439,13 +464,11 @@
       state.lastFired[hhmm] = today;
       save();
       var names = undone.map(function (t) { return t.name; }).join('、');
-      try {
-        new Notification('该打卡啦 ⏰', {
-          body: '今日还未完成：' + names,
-          icon: 'icon.svg',
-          tag: 'checkin-' + hhmm
-        });
-      } catch (e) { /* some browsers require SW registration */ }
+      showNotify('该打卡啦 ⏰', {
+        body: '今日还未完成：' + names,
+        icon: 'icon.svg',
+        tag: 'checkin-' + hhmm
+      }).catch(function () { /* notification failed */ });
     }
   }
 
@@ -505,6 +528,12 @@
   $('enableNotifBtn').addEventListener('click', function () {
     if (!('Notification' in window)) return;
     Notification.requestPermission().then(function () { renderReminders(); });
+  });
+
+  $('testNotifBtn').addEventListener('click', function () {
+    showNotify('测试通知 🔔', { body: '恭喜，通知已生效！到点就会提醒你打卡。', icon: 'icon.svg', tag: 'test' })
+      .then(function () { toast('已发送测试通知'); })
+      .catch(function () { toast('发送失败，请确认已授权通知'); });
   });
 
   $('exportBtn').addEventListener('click', function () {
