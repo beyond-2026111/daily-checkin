@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#22c55e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="打卡">
+<title>每日打卡</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" href="icon.svg">
+<style>
+  :root {
+    --bg: #f2f7f2; --card: #ffffff; --text: #17251b; --muted: #6b7f70;
+    --primary: #22c55e; --primary-dark: #16a34a; --line: #e4ece5;
+    --l0: #e8ede9; --l1: #bbe7c8; --l2: #22c55e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1512; --card: #182019; --text: #e6efe8; --muted: #8fa396;
+      --line: #243028; --l0: #20291f; --l1: #1f5c38; --l2: #22c55e;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+  .app {
+    max-width: 480px; margin: 0 auto;
+    padding: 24px 16px calc(32px + env(safe-area-inset-bottom));
+  }
+  /* ---------- header ---------- */
+  header { padding: 8px 4px 20px; }
+  .date-line { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  h1 { font-size: 28px; letter-spacing: 1px; }
+  .progress-wrap { margin-top: 16px; display: flex; align-items: center; gap: 12px; }
+  .progress-bar {
+    flex: 1; height: 12px; border-radius: 6px; background: var(--l0); overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%; width: 0; border-radius: 6px;
+    background: linear-gradient(90deg, var(--primary), var(--primary-dark));
+    transition: width .4s ease;
+  }
+  .progress-text { font-size: 14px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+  /* ---------- cards ---------- */
+  .card {
+    background: var(--card); border-radius: 16px; padding: 16px;
+    margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .card h2 { font-size: 16px; margin-bottom: 12px; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; }
+  .card-head h2 { margin-bottom: 12px; }
+  /* ---------- tasks ---------- */
+  #taskList { list-style: none; }
+  .task {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 4px; border-bottom: 1px solid var(--line);
+  }
+  .task:last-child { border-bottom: none; }
+  .check {
+    width: 44px; height: 44px; flex: none; border-radius: 50%;
+    border: 2px solid var(--line); background: transparent;
+    font-size: 20px; color: #fff; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .2s, border-color .2s, transform .1s;
+  }
+  .check:active { transform: scale(.9); }
+  .task.done .check { background: var(--primary); border-color: var(--primary); }
+  .task-main { flex: 1; min-width: 0; }
+  .task-name { font-size: 17px; font-weight: 600; }
+  .task.done .task-name { text-decoration: line-through; color: var(--muted); }
+  .task-stat { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .edit-tools { display: none; gap: 4px; }
+  body.edit-mode .edit-tools { display: flex; }
+  body.edit-mode .check { pointer-events: none; opacity: .5; }
+  .tool {
+    width: 36px; height: 36px; border: none; background: transparent;
+    font-size: 18px; cursor: pointer; border-radius: 8px;
+  }
+  .tool:active { background: var(--l0); }
+  .empty-tip { text-align: center; color: var(--muted); font-size: 14px; padding: 16px 0; }
+  .add-row { display: flex; gap: 8px; margin-top: 12px; }
+  .add-row input {
+    flex: 1; height: 44px; padding: 0 12px; font-size: 15px;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--bg); color: var(--text); outline: none; min-width: 0;
+  }
+  .add-row input:focus { border-color: var(--primary); }
+  /* ---------- buttons ---------- */
+  button { font-family: inherit; }
+  .add-row button, .ghost-btn, .primary-btn {
+    height: 44px; padding: 0 18px; border-radius: 10px; font-size: 15px;
+    cursor: pointer; border: none; white-space: nowrap;
+  }
+  .add-row button, .primary-btn { background: var(--primary); color: #fff; font-weight: 600; }
+  .add-row button:active, .primary-btn:active { background: var(--primary-dark); }
+  .ghost-btn {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--line); font-weight: 500;
+  }
+  .ghost-btn:active { background: var(--l0); }
+  .btn-row { display: flex; gap: 10px; }
+  .btn-row .ghost-btn { flex: 1; }
+  /* ---------- heatmap ---------- */
+  .heatmap {
+    display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px;
+  }
+  .cell {
+    aspect-ratio: 1; border-radius: 6px; background: var(--l0);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; color: var(--muted);
+  }
+  .cell.l1 { background: var(--l1); color: #14532d; }
+  .cell.l2 { background: var(--l2); color: #fff; font-weight: 700; }
+  .cell.today { outline: 2px solid var(--primary-dark); outline-offset: 1px; }
+  .legend { display: flex; gap: 14px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+  .lg { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+  .lg0 { background: var(--l0); } .lg1 { background: var(--l1); } .lg2 { background: var(--l2); }
+  /* ---------- reminders ---------- */
+  .hint { font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--bg); border: 1px solid var(--line);
+    border-radius: 999px; padding: 8px 8px 8px 14px; font-size: 15px; font-weight: 600;
+  }
+  .chip-x {
+    width: 22px; height: 22px; border-radius: 50%; border: none;
+    background: var(--l0); color: var(--muted); font-size: 14px;
+    cursor: pointer; line-height: 1; display: flex; align-items: center; justify-content: center;
+  }
+  #enableNotifBtn { width: 100%; }
+  /* ---------- footer / toast / celebrate ---------- */
+  footer { text-align: center; font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .toast {
+    position: fixed; left: 50%; bottom: calc(48px + env(safe-area-inset-bottom));
+    transform: translateX(-50%); background: rgba(23,37,27,.9); color: #fff;
+    padding: 10px 18px; border-radius: 999px; font-size: 14px; z-index: 60;
+  }
+  .celebrate {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(0,0,0,.45); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .celebrate-box {
+    background: var(--card); border-radius: 24px; padding: 36px 44px;
+    text-align: center; animation: pop .5s cubic-bezier(.2,1.4,.4,1);
+  }
+  .celebrate-box .emoji { font-size: 56px; }
+  .celebrate-box .t1 { font-size: 20px; font-weight: 700; margin-top: 12px; }
+  .celebrate-box .t2 { font-size: 14px; color: var(--muted); margin-top: 6px; }
+  @keyframes pop {
+    0% { transform: scale(.4); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="date-line" id="dateLine"></div>
+      <h1>每日打卡</h1>
+      <div class="progress-wrap">
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="progress-text" id="progressText">今日 0/0</div>
+      </div>
+    </header>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>今日任务</h2>
+        <button id="editBtn" class="ghost-btn">编辑</button>
+      </div>
+      <ul id="taskList"></ul>
+      <div class="add-row">
+        <input id="newTaskInput" type="text" maxlength="12" placeholder="添加新任务，如：百词斩">
+        <button id="addBtn">添加</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>最近 30 天</h2>
+      <div class="heatmap" id="heatmap"></div>
+      <div class="legend">
+        <span><i class="lg lg0"></i>未完成</span>
+        <span><i class="lg lg1"></i>部分完成</span>
+        <span><i class="lg lg2"></i>全部完成</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>提醒时间</h2>
+      <p class="hint" id="notifHint"></p>
+      <div class="chips" id="reminderChips"></div>
+      <div class="add-row">
+        <input id="timeInput" type="time" value="21:00">
+        <button id="addTimeBtn">添加提醒</button>
+      </div>
+      <button id="enableNotifBtn" class="primary-btn" hidden>开启通知权限</button>
+    </section>
+
+    <section class="card">
+      <h2>数据备份</h2>
+      <div class="btn-row">
+        <button id="exportBtn" class="ghost-btn">导出数据</button>
+        <button id="importBtn" class="ghost-btn">导入数据</button>
+        <input type="file" id="importFile" accept=".json,application/json" hidden>
+      </div>
+    </section>
+
+    <footer>数据保存在本机浏览器中，清除浏览器数据会丢失记录<br>建议定期「导出数据」备份</footer>
+  </div>
+
+  <div class="celebrate" id="celebrate" hidden>
+    <div class="celebrate-box">
+      <div class="emoji">🎉</div>
+      <div class="t1">今日全部完成！</div>
+      <div class="t2">继续加油，明天见 👋</div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var LS_KEY = 'dailyCheckin.v1';
+  var DEFAULT_TASKS = ['多邻国', '不背单词'];
+  var DEFAULT_REMINDERS = ['08:00', '22:00'];
+
+  function $ (id) { return document.getElementById(id); }
+  function pad (n) { return String(n).padStart(2, '0'); }
+  function fmt (d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function todayStr () { return fmt(new Date()); }
+  function esc (s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function normalize (s) {
+    s = s && typeof s === 'object' ? s : {};
+    return {
+      tasks: (Array.isArray(s.tasks) ? s.tasks : []).filter(function (t) { return t && t.id && t.name; })
+        .map(function (t) { return { id: String(t.id), name: String(t.name).slice(0, 12) }; }),
+      records: (s.records && typeof s.records === 'object') ? s.records : {},
+      reminders: Array.isArray(s.reminders)
+        ? s.reminders.filter(function (r) { return /^\d{2}:\d{2}$/.test(r); })
+        : DEFAULT_REMINDERS.slice(),
+      lastFired: (s.lastFired && typeof s.lastFired === 'object') ? s.lastFired : {},
+      lastCelebrate: typeof s.lastCelebrate === 'string' ? s.lastCelebrate : ''
+    };
+  }
+
+  function load () {
+    try {
+      var raw = localStorage.getItem(LS_KEY);
+      if (raw) return normalize(JSON.parse(raw));
+    } catch (e) { /* corrupted data -> start fresh */ }
+    var st = normalize(null);
+    DEFAULT_TASKS.forEach(function (name, i) {
+      st.tasks.push({ id: 't' + Date.now() + i, name: name });
+    });
+    return st;
+  }
+
+  var state = load();
+  var renderedDate = todayStr();
+
+  function save () { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+
+  /* ---------- stats ---------- */
+  function datesOf (taskId) { return Object.keys(state.records[taskId] || {}); }
+  function calcStreak (taskId) {
+    var set = new Set(datesOf(taskId));
+    var d = new Date();
+    if (!set.has(fmt(d))) d.setDate(d.getDate() - 1);
+    var s = 0;
+    while (set.has(fmt(d))) { s++; d.setDate(d.getDate() - 1); }
+    return s;
+  }
+  function totalDays (taskId) { return datesOf(taskId).length; }
+
+  /* ---------- render ---------- */
+  function render () {
+    var today = todayStr();
+    var d = new Date();
+    var week = ['日', '一', '二', '三', '四', '五', '六'];
+    $('dateLine').textContent = (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日 · 星期' + week[d.getDay()];
+
+    var ul = $('taskList');
+    var editMode = document.body.classList.contains('edit-mode');
+    if (state.tasks.length === 0) {
+      ul.innerHTML = '<li class="empty-tip">还没有任务，在下方添加吧</li>';
+    } else {
+      ul.innerHTML = state.tasks.map(function (t) {
+        var done = !!(state.records[t.id] && state.records[t.id][today]);
+        return '<li class="task' + (done ? ' done' : '') + '" data-id="' + t.id + '">' +
+          '<button class="check" aria-label="打卡">' + (done ? '✓' : '') + '</button>' +
+          '<div class="task-main">' +
+            '<div class="task-name">' + esc(t.name) + '</div>' +
+            '<div class="task-stat">🔥 连续 ' + calcStreak(t.id) + ' 天 · 累计 ' + totalDays(t.id) + ' 天</div>' +
+          '</div>' +
+          '<div class="edit-tools">' +
+            '<button class="tool rename" aria-label="重命名">✏️</button>' +
+            '<button class="tool del" aria-label="删除">🗑️</button>' +
+          '</div>' +
+        '</li>';
+      }).join('');
+    }
+
+    var total = state.tasks.length;
+    var doneCount = state.tasks.filter(function (t) {
+      return state.records[t.id] && state.records[t.id][today];
+    }).length;
+    $('progressFill').style.width = (total ? Math.round(doneCount / total * 100) : 0) + '%';
+    $('progressText').textContent = '今日 ' + doneCount + '/' + total;
+    $('editBtn').textContent = editMode ? '完成' : '编辑';
+
+    renderHeatmap(today);
+    renderReminders();
+  }
+
+  function renderHeatmap (today) {
+    var cells = [];
+    for (var i = 29; i >= 0; i--) {
+      var d = new Date();
+      d.setDate(d.getDate() - i);
+      var ds = fmt(d);
+      var done = 0;
+      state.tasks.forEach(function (t) {
+        if (state.records[t.id] && state.records[t.id][ds]) done++;
+      });
+      var level = state.tasks.length === 0 ? 0 : (done === 0 ? 0 : (done === state.tasks.length ? 2 : 1));
+      cells.push('<div class="cell l' + level + (ds === today ? ' today' : '') + '" title="' + ds + ' 完成 ' + done + '/' + state.tasks.length + '">' + d.getDate() + '</div>');
+    }
+    $('heatmap').innerHTML = cells.join('');
+  }
+
+  function renderReminders () {
+    var chips = state.reminders.slice().sort().map(function (r) {
+      return '<span class="chip">⏰ ' + r + '<button class="chip-x" data-r="' + r + '" aria-label="删除提醒">×</button></span>';
+    }).join('');
+    $('reminderChips').innerHTML = chips || '<span class="hint">暂无提醒，请在下方添加</span>';
+
+    var supported = 'Notification' in window;
+    var btn = $('enableNotifBtn');
+    btn.hidden = !supported || Notification.permission === 'granted';
+    var hint = $('notifHint');
+    if (!supported) {
+      hint.textContent = '当前浏览器不支持通知。建议用手机 Chrome / Safari 打开并安装到主屏幕。';
+    } else if (Notification.permission === 'granted') {
+      hint.textContent = '通知已开启。到点会提醒你打卡（需页面在后台运行或已安装到主屏幕）。';
+    } else if (Notification.permission === 'denied') {
+      hint.textContent = '通知权限已被拒绝，请在浏览器设置中手动开启本站点的通知权限。';
+    } else {
+      hint.textContent = '开启通知后，到点会自动提醒你打卡。';
+    }
+  }
+
+  /* ---------- actions ---------- */
+  function toggleTask (id) {
+    var today = todayStr();
+    state.records[id] = state.records[id] || {};
+    if (state.records[id][today]) {
+      delete state.records[id][today];
+    } else {
+      state.records[id][today] = Date.now();
+    }
+    save();
+    render();
+    var allDone = state.tasks.length > 0 && state.tasks.every(function (t) {
+      return state.records[t.id] && state.records[t.id][today];
+    });
+    if (allDone && state.lastCelebrate !== today) {
+      state.lastCelebrate = today;
+      save();
+      showCelebrate();
+    }
+  }
+
+  function renameTask (id) {
+    var t = state.tasks.find(function (x) { return x.id === id; });
+    if (!t) return;
+    var name = prompt('修改任务名称', t.name);
+    if (name && name.trim()) {
+      t.name = name.trim().slice(0, 12);
+      save();
+      render();
+    }
+  }
+
+  function deleteTask (id) {
+    var t = state.tasks.find(function (x) { return x.id === id; });
+    if (!t) return;
+    if (!confirm('删除任务「' + t.name + '」？其打卡记录将一并删除。')) return;
+    state.tasks = state.tasks.filter(function (x) { return x.id !== id; });
+    delete state.records[id];
+    save();
+    render();
+  }
+
+  function showCelebrate () {
+    var el = $('celebrate');
+    el.hidden = false;
+    setTimeout(function () { el.hidden = true; }, 2600);
+  }
+
+  var toastTimer;
+  function toast (msg) {
+    var el = $('toast');
+    el.textContent = msg;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.hidden = true; }, 2000);
+  }
+
+  /* ---------- reminder engine ---------- */
+  function checkReminders () {
+    var today = todayStr();
+    if (renderedDate !== today) { renderedDate = today; render(); }  // 跨天自动刷新
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    if (state.tasks.length === 0) return;
+    var undone = state.tasks.filter(function (t) {
+      return !(state.records[t.id] && state.records[t.id][today]);
+    });
+    if (undone.length === 0) return;
+    var now = new Date();
+    var hhmm = pad(now.getHours()) + ':' + pad(now.getMinutes());
+    if (state.reminders.indexOf(hhmm) !== -1 && state.lastFired[hhmm] !== today) {
+      state.lastFired[hhmm] = today;
+      save();
+      var names = undone.map(function (t) { return t.name; }).join('、');
+      try {
+        new Notification('该打卡啦 ⏰', {
+          body: '今日还未完成：' + names,
+          icon: 'icon.svg',
+          tag: 'checkin-' + hhmm
+        });
+      } catch (e) { /* some browsers require SW registration */ }
+    }
+  }
+
+  /* ---------- events ---------- */
+  $('taskList').addEventListener('click', function (e) {
+    var tool = e.target.closest('.tool');
+    if (tool) {
+      var id = tool.closest('.task').dataset.id;
+      if (tool.classList.contains('del')) deleteTask(id);
+      else renameTask(id);
+      return;
+    }
+    var row = e.target.closest('.task');
+    if (row && !document.body.classList.contains('edit-mode')) {
+      toggleTask(row.dataset.id);
+    }
+  });
+
+  $('editBtn').addEventListener('click', function () {
+    document.body.classList.toggle('edit-mode');
+    render();
+  });
+
+  function addTask () {
+    var input = $('newTaskInput');
+    var name = input.value.trim();
+    if (!name) { toast('请先输入任务名称'); return; }
+    if (state.tasks.some(function (t) { return t.name === name; })) { toast('任务已存在'); return; }
+    state.tasks.push({ id: 't' + Date.now(), name: name });
+    save();
+    input.value = '';
+    render();
+  }
+  $('addBtn').addEventListener('click', addTask);
+  $('newTaskInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') addTask();
+  });
+
+  $('reminderChips').addEventListener('click', function (e) {
+    var x = e.target.closest('.chip-x');
+    if (!x) return;
+    state.reminders = state.reminders.filter(function (r) { return r !== x.dataset.r; });
+    save();
+    renderReminders();
+  });
+
+  $('addTimeBtn').addEventListener('click', function () {
+    var v = $('timeInput').value;
+    if (!v) { toast('请先选择时间'); return; }
+    if (state.reminders.indexOf(v) !== -1) { toast('该提醒时间已存在'); return; }
+    state.reminders.push(v);
+    save();
+    renderReminders();
+    toast('已添加提醒 ' + v);
+  });
+
+  $('enableNotifBtn').addEventListener('click', function () {
+    if (!('Notification' in window)) return;
+    Notification.requestPermission().then(function () { renderReminders(); });
+  });
+
+  $('exportBtn').addEventListener('click', function () {
+    var blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'checkin-backup-' + todayStr() + '.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('已导出备份文件');
+  });
+
+  $('importBtn').addEventListener('click', function () { $('importFile').click(); });
+  $('importFile').addEventListener('change', function (e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var data = JSON.parse(reader.result);
+        if (!Array.isArray(data.tasks) || data.tasks.length === 0) throw new Error('bad');
+        state = normalize(data);
+        save();
+        render();
+        toast('导入成功');
+      } catch (err) {
+        toast('导入失败：文件格式不正确');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) checkReminders();
+  });
+
+  /* ---------- PWA ---------- */
+  if ('serviceWorker' in navigator &&
+      (location.protocol === 'https:' || ['localhost', '127.0.0.1'].indexOf(location.hostname) !== -1)) {
+    navigator.serviceWorker.register('./sw.js').catch(function () { /* offline cache unavailable */ });
+  }
+
+  /* ---------- start ---------- */
+  render();
+  checkReminders();
+  setInterval(checkReminders, 15000);
+})();
+</script>
+</body>
+</html>
