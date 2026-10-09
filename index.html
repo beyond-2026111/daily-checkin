@@ -531,9 +531,26 @@
   });
 
   $('testNotifBtn').addEventListener('click', function () {
-    showNotify('测试通知 🔔', { body: '恭喜，通知已生效！到点就会提醒你打卡。', icon: 'icon.svg', tag: 'test' })
-      .then(function () { toast('已发送测试通知'); })
-      .catch(function () { toast('发送失败，请确认已授权通知'); });
+    var hint = $('notifHint');
+    var report = function (msg) { hint.textContent = msg; };
+    var opts = { body: '恭喜，通知已生效！到点就会提醒你打卡。', icon: 'icon.svg', tag: 'test' };
+    var done = function () {
+      report('✅ 通知接口调用成功。若手机没弹出 = 被系统拦截：手机设置→应用→Edge→通知→允许（各类别都打开）');
+    };
+    var fail = function (err) {
+      report('❌ 弹通知失败：' + (err && err.name ? err.name + ' ' + err.message : err));
+    };
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.getRegistration().then(function (reg) {
+        if (reg) {
+          reg.showNotification('测试通知 🔔', opts).then(done).catch(fail);
+        } else {
+          report('❌ Service Worker 未注册，安卓上无法弹通知。请强制刷新页面（或清缓存）后重试');
+        }
+      }).catch(fail);
+    } else {
+      report('❌ 此浏览器不支持 Service Worker，无法弹通知，建议换 Chrome');
+    }
   });
 
   $('exportBtn').addEventListener('click', function () {
