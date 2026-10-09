@@ -187,6 +187,15 @@
     </section>
 
     <section class="card">
+      <h2>待办清单</h2>
+      <ul id="todoList"></ul>
+      <div class="add-row">
+        <input id="newTodoInput" type="text" maxlength="30" placeholder="新待办，如：背 50 个单词">
+        <button id="addTodoBtn">添加</button>
+      </div>
+    </section>
+
+    <section class="card">
       <h2>最近 30 天</h2>
       <div class="heatmap" id="heatmap"></div>
       <div class="legend">
@@ -254,6 +263,8 @@
       tasks: (Array.isArray(s.tasks) ? s.tasks : []).filter(function (t) { return t && t.id && t.name; })
         .map(function (t) { return { id: String(t.id), name: String(t.name).slice(0, 12) }; }),
       records: (s.records && typeof s.records === 'object') ? s.records : {},
+      todos: (Array.isArray(s.todos) ? s.todos : []).filter(function (t) { return t && t.id && t.text; })
+        .map(function (t) { return { id: String(t.id), text: String(t.text).slice(0, 30), done: !!t.done }; }),
       reminders: Array.isArray(s.reminders)
         ? s.reminders.filter(function (r) { return /^\d{2}:\d{2}$/.test(r); })
         : DEFAULT_REMINDERS.slice(),
@@ -328,6 +339,7 @@
     $('editBtn').textContent = editMode ? '完成' : '编辑';
 
     renderHeatmap(today);
+    renderTodos();
     renderReminders();
   }
 
@@ -367,6 +379,21 @@
     } else {
       hint.textContent = '开启通知后，到点会自动提醒你打卡。';
     }
+  }
+
+  function renderTodos () {
+    var ul = $('todoList');
+    if (state.todos.length === 0) {
+      ul.innerHTML = '<li class="empty-tip">暂无待办，在下方添加吧</li>';
+      return;
+    }
+    ul.innerHTML = state.todos.map(function (t) {
+      return '<li class="task' + (t.done ? ' done' : '') + '" data-id="' + t.id + '">' +
+        '<button class="check" aria-label="完成">' + (t.done ? '✓' : '') + '</button>' +
+        '<div class="task-main"><div class="task-name">' + esc(t.text) + '</div></div>' +
+        '<button class="tool todo-del" aria-label="删除待办">🗑️</button>' +
+      '</li>';
+    }).join('');
   }
 
   /* ---------- actions ---------- */
@@ -505,6 +532,34 @@
   $('addBtn').addEventListener('click', addTask);
   $('newTaskInput').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') addTask();
+  });
+
+  $('todoList').addEventListener('click', function (e) {
+    var li = e.target.closest('[data-id]');
+    if (!li) return;
+    var id = li.dataset.id;
+    if (e.target.closest('.todo-del')) {
+      state.todos = state.todos.filter(function (t) { return t.id !== id; });
+      save();
+      renderTodos();
+      return;
+    }
+    var t = state.todos.find(function (x) { return x.id === id; });
+    if (t) { t.done = !t.done; save(); renderTodos(); }
+  });
+
+  function addTodo () {
+    var input = $('newTodoInput');
+    var text = input.value.trim();
+    if (!text) { toast('请先输入待办内容'); return; }
+    state.todos.unshift({ id: 'd' + Date.now(), text: text, done: false });
+    save();
+    input.value = '';
+    renderTodos();
+  }
+  $('addTodoBtn').addEventListener('click', addTodo);
+  $('newTodoInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') addTodo();
   });
 
   $('reminderChips').addEventListener('click', function (e) {
