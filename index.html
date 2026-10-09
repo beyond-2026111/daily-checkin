@@ -365,11 +365,25 @@
     }).join('');
     $('reminderChips').innerHTML = chips || '<span class="hint">暂无提醒，请在下方添加</span>';
 
+    var hint = $('notifHint');
+    if (isApp) {
+      $('enableNotifBtn').hidden = true;
+      $('testNotifBtn').hidden = false;
+      hint.textContent = 'App 内使用系统级提醒：到点自动弹出通知，关闭 App 也有效。';
+      NativeNotif.checkPermissions().then(function (st) {
+        if (hint.textContent.charAt(0) === '✅') return;  // 已被测试按钮覆盖
+        if (st && st.display === 'granted') {
+          hint.textContent = '✅ 通知已开启，到点自动提醒（关闭 App 也有效）。';
+        } else {
+          hint.textContent = '尚未开启通知权限，点「发送测试通知」按提示允许即可。';
+        }
+      }).catch(function () {});
+      return;
+    }
     var supported = 'Notification' in window;
     var btn = $('enableNotifBtn');
     btn.hidden = !supported || Notification.permission === 'granted';
     $('testNotifBtn').hidden = !supported || Notification.permission !== 'granted';
-    var hint = $('notifHint');
     if (!supported) {
       hint.textContent = '当前浏览器不支持通知。建议用手机 Chrome / Safari 打开并安装到主屏幕。';
     } else if (Notification.permission === 'granted') {
@@ -453,6 +467,54 @@
     toastTimer = setTimeout(function () { el.hidden = true; }, 2000);
   }
 
+  /* ---------- Capacitor 原生通知（打包成 App 后生效，关掉 App 也提醒） ---------- */
+  var isApp = !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications);
+  var NativeNotif = isApp ? window.Capacitor.Plugins.LocalNotifications : null;
+
+  function notifIdOf (hhmm) {
+    var p = hhmm.split(':');
+    return parseInt(p[0], 10) * 100 + parseInt(p[1], 10);  // 21:05 -> 2105
+  }
+
+  /* 让系统已注册的闹钟与 state.reminders 保持一致（增删时间后自动同步） */
+  function syncNativeReminders () {
+    if (!NativeNotif) return Promise.resolve();
+    return NativeNotif.checkPermissions()
+      .then(function (st) {
+        return (st && st.display === 'granted') ? st : NativeNotif.requestPermissions();
+      })
+      .then(function (st) {
+        if (!st || st.display !== 'granted') return;
+        return NativeNotif.getScheduled().then(function (res) {
+          var scheduled = res.notifications || [];
+          var stale = scheduled.filter(function (n) {
+            return state.reminders.every(function (r) { return notifIdOf(r) !== n.id; });
+          });
+          var chain = stale.length
+            ? NativeNotif.cancel({ notifications: stale.map(function (n) { return { id: n.id }; }) })
+            : Promise.resolve();
+          return chain.then(function () {
+            var missing = state.reminders.filter(function (r) {
+              return scheduled.every(function (n) { return n.id !== notifIdOf(r); });
+            });
+            if (!missing.length) return;
+            return NativeNotif.schedule({
+              notifications: missing.map(function (r) {
+                var p = r.split(':');
+                return {
+                  id: notifIdOf(r),
+                  title: '该打卡啦 ⏰',
+                  body: '今日任务还没完成，点开打卡吧！',
+                  schedule: { on: { hour: parseInt(p[0], 10), minute: parseInt(p[1], 10) }, allowWhileIdle: true }
+                };
+              })
+            });
+          });
+        });
+      })
+      .catch(function () { /* 同步失败静默 */ });
+  }
+
   /* 安卓 Chrome/Edge 禁止 new Notification()，必须经 Service Worker 弹出 */
   function showNotify (title, opts) {
     var fallback = function () {
@@ -479,6 +541,7 @@
   function checkReminders () {
     var today = todayStr();
     if (renderedDate !== today) { renderedDate = today; render(); }  // 跨天自动刷新
+    if (isApp) return;  // App 内由系统闹钟负责，无需页面轮询
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
     if (state.tasks.length === 0) return;
     var undone = state.tasks.filter(function (t) {
@@ -568,6 +631,7 @@
     state.reminders = state.reminders.filter(function (r) { return r !== x.dataset.r; });
     save();
     renderReminders();
+    syncNativeReminders();
   });
 
   $('addTimeBtn').addEventListener('click', function () {
@@ -577,6 +641,7 @@
     state.reminders.push(v);
     save();
     renderReminders();
+    syncNativeReminders();
     toast('已添加提醒 ' + v);
   });
 
@@ -588,6 +653,30 @@
   $('testNotifBtn').addEventListener('click', function () {
     var hint = $('notifHint');
     var report = function (msg) { hint.textContent = msg; };
+
+    /* App 内：走原生通知通道 */
+    if (isApp) {
+      var sendTest = function () {
+        NativeNotif.schedule({
+          notifications: [{ id: 9999, title: '测试通知 🔔', body: '恭喜，原生通知已生效！关闭 App 到点也会提醒。' }]
+        }).then(function () {
+          report('✅ 测试通知已发出，请下拉查看通知栏');
+        }).catch(function (err) {
+          report('❌ 发送失败：' + (err && err.message ? err.message : err));
+        });
+      };
+      NativeNotif.checkPermissions().then(function (st) {
+        if (st && st.display === 'granted') { sendTest(); return; }
+        return NativeNotif.requestPermissions().then(function (r) {
+          if (r && r.display === 'granted') { sendTest(); renderReminders(); }
+          else report('❌ 通知权限被拒：手机设置 → 应用 → 每日打卡 → 通知 → 允许');
+        });
+      }).catch(function (err) {
+        report('❌ ' + (err && err.message ? err.message : err));
+      });
+      return;
+    }
+
     var opts = { body: '恭喜，通知已生效！到点就会提醒你打卡。', icon: 'icon.svg', tag: 'test' };
     var done = function () {
       report('✅ 通知接口调用成功。若手机没弹出 = 被系统拦截：手机设置→应用→Edge→通知→允许（各类别都打开）');
@@ -644,13 +733,14 @@
   });
 
   /* ---------- PWA ---------- */
-  if ('serviceWorker' in navigator &&
+  if (!isApp && 'serviceWorker' in navigator &&
       (location.protocol === 'https:' || ['localhost', '127.0.0.1'].indexOf(location.hostname) !== -1)) {
     navigator.serviceWorker.register('./sw.js').catch(function () { /* offline cache unavailable */ });
   }
 
   /* ---------- start ---------- */
   render();
+  if (isApp) syncNativeReminders();  // App 启动即把提醒注册进系统
   checkReminders();
   setInterval(checkReminders, 15000);
 })();
