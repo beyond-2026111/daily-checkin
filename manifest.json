@@ -1,0 +1,19 @@
+{
+  "name": "每日打卡",
+  "short_name": "打卡",
+  "description": "多邻国、不背单词等每日学习打卡提醒与记录",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#22c55e",
+  "background_color": "#f2f7f2",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
